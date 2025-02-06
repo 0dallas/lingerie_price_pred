@@ -1,0 +1,432 @@
+{
+  "components": {
+    "comp-condition-1": {
+      "dag": {
+        "tasks": {
+          "depl-model": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-depl-model"
+            },
+            "inputs": {
+              "artifacts": {
+                "model": {
+                  "componentInputArtifact": "pipelinechannel--train-model-model"
+                }
+              },
+              "parameters": {
+                "project": {
+                  "componentInputParameter": "pipelinechannel--project"
+                },
+                "region": {
+                  "componentInputParameter": "pipelinechannel--region"
+                },
+                "serving_container_image_uri": {
+                  "componentInputParameter": "pipelinechannel--serving_container_image_uri"
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "depl-model"
+            }
+          }
+        }
+      },
+      "inputDefinitions": {
+        "artifacts": {
+          "pipelinechannel--train-model-model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        },
+        "parameters": {
+          "pipelinechannel--eval-model-deploy": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--project": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--region": {
+            "parameterType": "STRING"
+          },
+          "pipelinechannel--serving_container_image_uri": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-depl-model": {
+      "executorLabel": "exec-depl-model",
+      "inputDefinitions": {
+        "artifacts": {
+          "model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        },
+        "parameters": {
+          "project": {
+            "parameterType": "STRING"
+          },
+          "region": {
+            "parameterType": "STRING"
+          },
+          "serving_container_image_uri": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "vertex_endpoint": {
+            "artifactType": {
+              "schemaTitle": "system.Artifact",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "vertex_model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    },
+    "comp-eval-model": {
+      "executorLabel": "exec-eval-model",
+      "inputDefinitions": {
+        "artifacts": {
+          "rf_model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "test_set": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "metrics": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        },
+        "parameters": {
+          "deploy": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-get-data-storage": {
+      "executorLabel": "exec-get-data-storage",
+      "inputDefinitions": {
+        "parameters": {
+          "path": {
+            "parameterType": "STRING"
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "dataset_test": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "dataset_train": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        },
+        "parameters": {
+          "brand_name_dict": {
+            "parameterType": "STRING"
+          },
+          "color_dict": {
+            "parameterType": "STRING"
+          },
+          "product_category_dict": {
+            "parameterType": "STRING"
+          }
+        }
+      }
+    },
+    "comp-train-model": {
+      "executorLabel": "exec-train-model",
+      "inputDefinitions": {
+        "artifacts": {
+          "dataset": {
+            "artifactType": {
+              "schemaTitle": "system.Dataset",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "model": {
+            "artifactType": {
+              "schemaTitle": "system.Model",
+              "schemaVersion": "0.0.1"
+            }
+          }
+        }
+      }
+    }
+  },
+  "defaultPipelineRoot": "gs://price_lingerie_predict_eu/pipeline/",
+  "deploymentSpec": {
+    "executors": {
+      "exec-depl-model": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "depl_model"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'google-cloud-aiplatform' 'kfp' 'scikit-learn==1.3.2' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef depl_model(\n    model: Input[Model],\n    project: str,\n    region: str,\n    serving_container_image_uri: str,\n    vertex_endpoint: Output[Artifact],\n    vertex_model: Output[Model]\n):\n    from google.cloud import aiplatform\n    import os\n    aiplatform.init(project=project, location=region)\n\n    DISPLAY_NAME = \"lingerieprice\"\n    ENDPOINT_NAME = \"lingerieprice-endpoint\"\n\n    path, _ = os.path.split(model.uri)\n\n    upload_model = aiplatform.Model.upload(\n        display_name = DISPLAY_NAME,\n        artifact_uri = path,\n        serving_container_image_uri = serving_container_image_uri,  \n    )\n\n    def crear_endpoint():\n        endpoints = aiplatform.Endpoint.list(\n                filter=f'display_name=\"{ENDPOINT_NAME}\"',\n                order_by=\"create_time desc\",\n                project=project,\n                location=region)\n\n        if len(endpoints) > 0:\n            return endpoints[0]\n        else:\n            return aiplatform.Endpoint.create(\n                display_name=ENDPOINT_NAME,\n                project=project,\n                location=region)\n\n    endpoint = crear_endpoint()\n\n    deploy_model =  upload_model.deploy(\n        machine_type = \"n1-standard-4\",\n        endpoint = endpoint,\n        min_replica_count=1,  # serverless\n        max_replica_count=3,   # instancias\n        deployed_model_display_name = DISPLAY_NAME\n    )\n\n    vertex_endpoint.uri = endpoint.resource_name\n    vertex_model.uri = deploy_model.resource_name\n\n"
+          ],
+          "image": "python:3.10"
+        }
+      },
+      "exec-eval-model": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "eval_model"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&  python3 -m pip install --quiet --no-warn-script-location 'scikit-learn==1.3.2' 'numpy==1.22.4' 'pandas' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef eval_model(\n    test_set: Input[Dataset],\n    rf_model: Input[Model],\n    metrics: Output[Metrics]\n) -> NamedTuple(\"EvalModelOutput\",[(\"deploy\",str)]):\n\n    from sklearn.ensemble import RandomForestRegressor\n    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score\n    import pandas as pd\n    import joblib\n\n    data = pd.read_csv(test_set.path + '.csv')\n    model_path = rf_model.path + \".joblib\"\n    model = joblib.load(model_path)\n\n    X_test = data.drop(columns='price')\n    y_test = data.price\n    y_pred = model.predict(X_test)\n\n    rmse = mean_squared_error(y_test, y_pred,squared=False)\n    mae = mean_absolute_error(y_test, y_pred)\n    r2 = r2_score(y_test, y_pred)\n\n    metrics.log_metric('rmse', rmse)\n    metrics.log_metric('mae', mae)\n    metrics.log_metric('r2', r2)\n\n    deploy = 'true'\n\n    return(deploy,)\n\n"
+          ],
+          "image": "python:3.10"
+        }
+      },
+      "exec-get-data-storage": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "get_data_storage"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'google-cloud-storage' 'scikit-learn==1.5.2' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef get_data_storage(\n    path: str,\n    dataset_train: Output[Dataset],\n    dataset_test: Output[Dataset]\n) -> NamedTuple(\"GetDataOutput\",[(\"product_category_dict\",str),(\"brand_name_dict\",str),(\"color_dict\",str)]):\n\n    import pandas as pd\n    from sklearn.model_selection import train_test_split\n    from google.cloud import storage\n    import json\n\n    client = storage.Client()\n    bucket_name, blob_name = path.replace(\"gs://\", \"\").split(\"/\", 1)\n    bucket = client.bucket(bucket_name)\n    blob = bucket.blob(blob_name)\n    temp_file = \"/tmp/temp.csv\"\n    blob.download_to_filename(temp_file)\n\n    df = pd.read_csv(temp_file)\n\n    train, test = train_test_split(df,test_size=0.3)\n\n    product_category_dict = dict()\n    brand_name_dict = dict()\n    color_dict = dict()\n\n    for i,j in enumerate(train['product_category'].unique().tolist()):\n        product_category_dict[j] = i\n    train['product_category'] = train['product_category'].map(product_category_dict)\n    test['product_category'] = test['product_category'].map(product_category_dict)\n\n    for i,j in enumerate(train['brand_name'].unique().tolist()):\n        brand_name_dict[j] = i\n    train['brand_name'] = train['brand_name'].map(brand_name_dict)\n    test['brand_name'] = test['brand_name'].map(brand_name_dict)\n\n    for i,j in enumerate(train['color'].unique().tolist()):\n        color_dict[j] = i\n    train['color'] = train['color'].map(color_dict)\n    test['color'] = test['color'].map(color_dict)\n\n    train.to_csv(dataset_train.path + \".csv\", index=False)\n    test.to_csv(dataset_test.path + \".csv\", index=False)\n\n    return (json.dumps(product_category_dict),json.dumps(brand_name_dict),json.dumps(color_dict))\n\n"
+          ],
+          "image": "python:3.9"
+        }
+      },
+      "exec-train-model": {
+        "container": {
+          "args": [
+            "--executor_input",
+            "{{$}}",
+            "--function_to_execute",
+            "train_model"
+          ],
+          "command": [
+            "sh",
+            "-c",
+            "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet --no-warn-script-location 'kfp==2.11.0' '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&  python3 -m pip install --quiet --no-warn-script-location 'scikit-learn==1.3.2' 'numpy==1.22.4' 'pandas' && \"$0\" \"$@\"\n",
+            "sh",
+            "-ec",
+            "program_path=$(mktemp -d)\n\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\n_KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+            "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import *\n\ndef train_model(\n    dataset: Input[Dataset],\n    model: Output[Model],\n):\n\n    import pandas as pd\n    import joblib\n    from sklearn.ensemble import RandomForestRegressor\n\n    data = pd.read_csv(dataset.path +\".csv\")\n    model_rf = RandomForestRegressor(max_depth=30,\n                                  min_samples_split=6,\n                                  n_estimators=200,\n                                  random_state=42)\n\n    model_rf.fit(\n        data.drop(columns='price'),\n        data.price\n    )\n\n    score = model_rf.score(\n        data.drop(columns='price'),\n        data.price\n    )\n\n    model.metadata[\"train_score\"] = float(score)\n    model.metadata[\"framework\"] = 'RF'\n\n    joblib.dump(model_rf,model.path + \".joblib\")\n\n"
+          ],
+          "image": "python:3.10"
+        }
+      }
+    }
+  },
+  "pipelineInfo": {
+    "name": "pipeline-pricelignerie-2"
+  },
+  "root": {
+    "dag": {
+      "tasks": {
+        "condition-1": {
+          "componentRef": {
+            "name": "comp-condition-1"
+          },
+          "dependentTasks": [
+            "eval-model",
+            "train-model"
+          ],
+          "inputs": {
+            "artifacts": {
+              "pipelinechannel--train-model-model": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "model",
+                  "producerTask": "train-model"
+                }
+              }
+            },
+            "parameters": {
+              "pipelinechannel--eval-model-deploy": {
+                "taskOutputParameter": {
+                  "outputParameterKey": "deploy",
+                  "producerTask": "eval-model"
+                }
+              },
+              "pipelinechannel--project": {
+                "componentInputParameter": "project"
+              },
+              "pipelinechannel--region": {
+                "componentInputParameter": "region"
+              },
+              "pipelinechannel--serving_container_image_uri": {
+                "componentInputParameter": "serving_container_image_uri"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "deploy"
+          },
+          "triggerPolicy": {
+            "condition": "inputs.parameter_values['pipelinechannel--eval-model-deploy'] == 'true'"
+          }
+        },
+        "eval-model": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-eval-model"
+          },
+          "dependentTasks": [
+            "get-data-storage",
+            "train-model"
+          ],
+          "inputs": {
+            "artifacts": {
+              "rf_model": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "model",
+                  "producerTask": "train-model"
+                }
+              },
+              "test_set": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "dataset_test",
+                  "producerTask": "get-data-storage"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "eval-model"
+          }
+        },
+        "get-data-storage": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-get-data-storage"
+          },
+          "inputs": {
+            "parameters": {
+              "path": {
+                "componentInputParameter": "path"
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "get-data-storage"
+          }
+        },
+        "train-model": {
+          "cachingOptions": {
+            "enableCache": true
+          },
+          "componentRef": {
+            "name": "comp-train-model"
+          },
+          "dependentTasks": [
+            "get-data-storage"
+          ],
+          "inputs": {
+            "artifacts": {
+              "dataset": {
+                "taskOutputArtifact": {
+                  "outputArtifactKey": "dataset_train",
+                  "producerTask": "get-data-storage"
+                }
+              }
+            }
+          },
+          "taskInfo": {
+            "name": "train-model"
+          }
+        }
+      }
+    },
+    "inputDefinitions": {
+      "parameters": {
+        "path": {
+          "defaultValue": "gs://price_lingerie_predict_eu/data/DATA_MODELO.csv",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "project": {
+          "defaultValue": "mimetic-card-436014-r9",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "region": {
+          "defaultValue": "europe-west4",
+          "isOptional": true,
+          "parameterType": "STRING"
+        },
+        "serving_container_image_uri": {
+          "defaultValue": "europe-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.1-3:latest",
+          "isOptional": true,
+          "parameterType": "STRING"
+        }
+      }
+    }
+  },
+  "schemaVersion": "2.1.0",
+  "sdkVersion": "kfp-2.11.0"
+}
